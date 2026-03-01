@@ -119,26 +119,63 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     isThreadReply,
   });
 
+  // For non-threaded channel messages, use a temporary ephemeral-style message
+  // since assistant.threads.setStatus requires a thread context.
+  let channelTypingTs: string | undefined;
+
   const typingTarget = statusThreadTs ? `${message.channel}/${statusThreadTs}` : message.channel;
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
       didSetStatus = true;
-      await ctx.setSlackThreadStatus({
-        channelId: message.channel,
-        threadTs: statusThreadTs,
-        status: "is typing...",
-      });
+      if (statusThreadTs) {
+        // Threaded: use existing assistant.threads.setStatus API
+        await ctx.setSlackThreadStatus({
+          channelId: message.channel,
+          threadTs: statusThreadTs,
+          status: "is typing...",
+        });
+      } else {
+        // Channel-level: post a temporary status message
+        try {
+          const result = await ctx.app.client.chat.postMessage({
+            token: ctx.botToken,
+            channel: message.channel,
+            text: "_is typing…_",
+            // Prevent notifications/unreads for typing indicator
+            unfurl_links: false,
+            unfurl_media: false,
+          });
+          channelTypingTs = result.ts ?? undefined;
+        } catch {
+          // Silently ignore — typing indicator is best-effort
+        }
+      }
     },
     stop: async () => {
       if (!didSetStatus) {
         return;
       }
       didSetStatus = false;
-      await ctx.setSlackThreadStatus({
-        channelId: message.channel,
-        threadTs: statusThreadTs,
-        status: "",
-      });
+      if (statusThreadTs) {
+        // Threaded: clear status via assistant API
+        await ctx.setSlackThreadStatus({
+          channelId: message.channel,
+          threadTs: statusThreadTs,
+          status: "",
+        });
+      } else if (channelTypingTs) {
+        // Channel-level: delete the temporary status message
+        try {
+          await ctx.app.client.chat.delete({
+            token: ctx.botToken,
+            channel: message.channel,
+            ts: channelTypingTs,
+          });
+        } catch {
+          // Silently ignore — message may already be gone
+        }
+        channelTypingTs = undefined;
+      }
     },
     onStartError: (err) => {
       logTypingFailure({
