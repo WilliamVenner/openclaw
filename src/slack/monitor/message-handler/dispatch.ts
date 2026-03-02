@@ -134,8 +134,8 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
           threadTs: statusThreadTs,
           status: "is typing...",
         });
-      } else {
-        // Channel-level: post a temporary status message
+      } else if (!channelTypingTs) {
+        // Channel-level: post a temporary status message (only once)
         try {
           const result = await ctx.app.client.chat.postMessage({
             token: ctx.botToken,
