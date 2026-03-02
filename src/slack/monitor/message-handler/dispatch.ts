@@ -146,6 +146,10 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
             unfurl_media: false,
           });
           channelTypingTs = result.ts ?? undefined;
+          // Seed the draft stream so it reuses this message instead of creating a new one
+          if (channelTypingTs && result.channel) {
+            draftStream?.seedMessage(result.channel, channelTypingTs);
+          }
         } catch {
           // Silently ignore — typing indicator is best-effort
         }
@@ -164,15 +168,18 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
           status: "",
         });
       } else if (channelTypingTs) {
-        // Channel-level: delete the temporary status message
-        try {
-          await ctx.app.client.chat.delete({
-            token: ctx.botToken,
-            channel: message.channel,
-            ts: channelTypingTs,
-          });
-        } catch {
-          // Silently ignore — message may already be gone
+        // Channel-level: only delete if the draft stream hasn't taken over this message
+        const streamOwnsMessage = draftStream?.messageId() === channelTypingTs;
+        if (!streamOwnsMessage) {
+          try {
+            await ctx.app.client.chat.delete({
+              token: ctx.botToken,
+              channel: message.channel,
+              ts: channelTypingTs,
+            });
+          } catch {
+            // Silently ignore — message may already be gone
+          }
         }
         channelTypingTs = undefined;
       }
@@ -362,22 +369,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     accountId: account.accountId,
     maxChars: Math.min(ctx.textLimit, 4000),
     resolveThreadTs: () => replyPlan.nextThreadTs(),
-    onMessageSent: () => {
-      replyPlan.markSent();
-      // Clear the channel typing indicator as soon as the first streamed message appears
-      if (channelTypingTs) {
-        const tsToDelete = channelTypingTs;
-        channelTypingTs = undefined;
-        didSetStatus = false;
-        ctx.app.client.chat
-          .delete({
-            token: ctx.botToken,
-            channel: message.channel,
-            ts: tsToDelete,
-          })
-          .catch(() => {});
-      }
-    },
+    onMessageSent: () => replyPlan.markSent(),
     log: logVerbose,
     warn: logVerbose,
   });
