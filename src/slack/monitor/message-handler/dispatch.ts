@@ -362,7 +362,22 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     accountId: account.accountId,
     maxChars: Math.min(ctx.textLimit, 4000),
     resolveThreadTs: () => replyPlan.nextThreadTs(),
-    onMessageSent: () => replyPlan.markSent(),
+    onMessageSent: () => {
+      replyPlan.markSent();
+      // Clear the channel typing indicator as soon as the first streamed message appears
+      if (channelTypingTs) {
+        const tsToDelete = channelTypingTs;
+        channelTypingTs = undefined;
+        didSetStatus = false;
+        ctx.app.client.chat
+          .delete({
+            token: ctx.botToken,
+            channel: message.channel,
+            ts: tsToDelete,
+          })
+          .catch(() => {});
+      }
+    },
     log: logVerbose,
     warn: logVerbose,
   });
