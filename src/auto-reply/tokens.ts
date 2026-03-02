@@ -28,11 +28,16 @@ export function isSilentReplyPrefixText(
   if (!normalized) {
     return false;
   }
-  if (!normalized.includes("_")) {
-    return false;
+  const upperToken = token.toUpperCase();
+  // Check if the normalized text is a progressive character-by-character
+  // prefix of the token. This catches early characters (e.g. "N", "NO")
+  // before the underscore appears, preventing flash-then-delete on channels
+  // that post messages before the full token is received.
+  if (normalized.length <= upperToken.length && upperToken.startsWith(normalized)) {
+    // Only match if all characters are valid token characters (A-Z, _)
+    if (/^[A-Z_]+$/.test(normalized)) {
+      return true;
+    }
   }
-  if (/[^A-Z_]/.test(normalized)) {
-    return false;
-  }
-  return token.toUpperCase().startsWith(normalized);
+  return false;
 }
