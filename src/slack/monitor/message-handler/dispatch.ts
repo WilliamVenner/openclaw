@@ -449,6 +449,27 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
             },
       onAssistantMessageStart: onDraftBoundary,
       onReasoningEnd: onDraftBoundary,
+      onCompactionStart: async () => {
+        // Update the typing indicator to show compaction status
+        if (channelTypingTs) {
+          try {
+            await ctx.app.client.chat.update({
+              token: ctx.botToken,
+              channel: message.channel,
+              ts: channelTypingTs,
+              text: "_compacting memory…_",
+            });
+          } catch {
+            // Best-effort
+          }
+        } else if (statusThreadTs) {
+          await ctx.setSlackThreadStatus({
+            channelId: message.channel,
+            threadTs: statusThreadTs,
+            status: "compacting memory…",
+          });
+        }
+      },
     },
   });
   await draftStream.flush();
