@@ -11,6 +11,8 @@ export type SlackDraftStream = {
   clear: () => Promise<void>;
   stop: () => void;
   forceNewMessage: () => void;
+  /** Seed the stream with an existing message to reuse (e.g. typing indicator). */
+  seedMessage: (channelId: string, messageId: string) => void;
   messageId: () => string | undefined;
   channelId: () => string | undefined;
 };
@@ -128,12 +130,19 @@ export function createSlackDraftStream(params: {
 
   params.log?.(`slack stream preview ready (maxChars=${maxChars}, throttleMs=${throttleMs})`);
 
+  const seedMessage = (channelId: string, messageId: string) => {
+    streamChannelId = channelId;
+    streamMessageId = messageId;
+    // Don't set lastSentText — forces the first real update to edit the message
+  };
+
   return {
     update: loop.update,
     flush: loop.flush,
     clear,
     stop,
     forceNewMessage,
+    seedMessage,
     messageId: () => streamMessageId,
     channelId: () => streamChannelId,
   };
