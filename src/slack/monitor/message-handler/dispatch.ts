@@ -451,16 +451,37 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       onReasoningEnd: onDraftBoundary,
       onCompactionStart: async () => {
         // Update the typing indicator to show compaction status
-        if (channelTypingTs) {
+        // If no typing message exists yet, post one now
+        if (!channelTypingTs && !statusThreadTs) {
+          try {
+            const result = await ctx.app.client.chat.postMessage({
+              token: ctx.botToken,
+              channel: message.channel,
+              text: "_compacting memory…_",
+              unfurl_links: false,
+              unfurl_media: false,
+            });
+            channelTypingTs = result.ts ?? undefined;
+            if (channelTypingTs && result.channel) {
+              draftStream.seedMessage(result.channel, channelTypingTs);
+            }
+            return;
+          } catch {
+            // Best-effort
+          }
+        }
+        const streamMsgId = draftStream.messageId();
+        const targetTs = channelTypingTs ?? streamMsgId;
+        if (targetTs && !statusThreadTs) {
           try {
             await ctx.app.client.chat.update({
               token: ctx.botToken,
               channel: message.channel,
-              ts: channelTypingTs,
+              ts: targetTs,
               text: "_compacting memory…_",
             });
-          } catch {
-            // Best-effort
+          } catch (err) {
+            logVerbose(`compaction status update failed: ${String(err)}`);
           }
         } else if (statusThreadTs) {
           await ctx.setSlackThreadStatus({
